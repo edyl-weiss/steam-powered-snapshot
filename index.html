@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Steam top sellers and most-played games in one sortable table, with weekly chart history and Steam's year-end top 12 back to 2020. A dated snapshot, not live data.">
+<meta name="theme-color" content="#171a21">
+<meta property="og:title" content="Steam Performance Snapshot">
+<meta property="og:description" content="Steam top sellers, player counts, and chart history back to 2020, cross-checked across sources.">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/assets/styles.css">
+<title>Steam Performance Snapshot, with history to 2020</title>
+</head>
+<body>
+<div class="topbar"><div class="in">
+  <span class="brand"><i aria-hidden="true"></i>Chart Deck</span>
+  <nav class="topnav" aria-label="Sections"><a href="#charts" class="on">Charts</a><a href="#weeks">Weekly</a><a href="#years">History</a><a href="#checks">Sources</a></nav>
+</div></div>
+<div class="wrap" id="charts">
+<div class="subnav"><span class="crumb">Steam performance, US and global</span>
+  <label class="search"><input id="q" type="search" placeholder="search title or App ID" autocomplete="off"><span aria-hidden="true">⌕</span></label>
+</div>
+<header class="top">
+  <div>
+    <h1>What’s winning on Steam</h1>
+    <p class="sub">Top sellers and most-played games from Steam’s own charts, merged into one sortable table, with Steam’s weekly charts for the past month and its year-end top 12 back to 2020. Tap any game for its sources.</p>
+  </div>
+  <div class="stamp" aria-label="This is a frozen snapshot, not live data"><b>Frozen snapshot</b><span>Sep 27 to 28, 2026, with history to 2020. These numbers don’t update.</span></div>
+</header>
+
+<div class="fresh" id="fresh"></div>
+
+<div class="layout"><main>
+<div class="controls">
+  <div class="row"><span class="lbl">Period</span>
+    <div class="scrollx"><div class="seg" id="periods" role="group" aria-label="Time period"></div></div>
+  </div>
+  <div class="row"><span class="lbl">Rank by</span>
+    <div class="scrollx"><div class="seg" id="modes" role="group" aria-label="Ranking mode"></div></div>
+  </div>
+  <div class="row">
+    <button class="btn green" id="ftoggle" aria-expanded="false" aria-controls="filters">Narrow results</button>
+    <button class="btn" id="natoggle" aria-pressed="true">Hide unavailable columns</button>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<div class="caveat" id="caveat" hidden></div>
+<div class="tablebox"><table id="t"><thead><tr id="thead"></tr></thead><tbody id="tb"></tbody></table></div>
+</main>
+<aside aria-label="Narrow results"><div id="filters" hidden></div></aside>
+</div>
+
+
+<section class="hist" id="weeks">
+  <h2>The last four weeks</h2>
+  <p class="lede">Steam’s official weekly top sellers for the United States, ranked by each week’s revenue. Only the top 20 of each weekly chart could be read, so a blank means “not in that week’s top 20,” not “not selling.” The last column is the live chart from Sep 28.</p>
+  <div class="legend"><span>Shading gets darker the higher the rank.</span><span>Tap a game for its full record.</span></div>
+  <div class="histbox"><table id="wk"><thead><tr id="wkh"></tr></thead><tbody id="wkb"></tbody></table></div>
+</section>
+
+<section class="hist" id="years">
+  <h2>Year by year, 2020 to 2025</h2>
+  <p class="lede">Each year Steam names its 12 highest-grossing games, in no particular order. Steam doesn’t publish the rank within those 12 or any revenue figures, so this shows who made the top 12, not who came first.</p>
+  <div class="legend"><span><span class="plat"></span> In Steam’s top 12 by revenue that year</span><span id="ylegend"></span></div>
+  <div class="histbox"><table id="yr"><thead><tr id="yrh"></tr></thead><tbody id="yrb"></tbody></table></div>
+  <div class="facts" id="facts"></div>
+</section>
+
+<section class="hist" id="checks">
+  <h2>How the history was checked</h2>
+  <p class="lede">Steam’s year-end pages load their lists with scripts that couldn’t be read directly, so each year’s top 12 was taken from press coverage and only kept where independent outlets agreed on all 12 games. The weekly charts were read straight from Steam.</p>
+  <div class="checks" id="checklist"></div>
+</section>
+
+<section class="about">
+  <div><h2>Where these numbers come from</h2>
+    <p>Top-seller rank, price, discount, rank change and weeks on chart come from Steam’s live Top Sellers chart for the United States, which Steam ranks by revenue. It was read once, on Sep 28, 2026 at about 01:05 UTC.</p>
+    <p>Current players and today’s peak come from Steam’s official most-played chart (ISteamChartsService), as mirrored by Steam Dashboard at 03:15 UTC on Sep 27, 2026. That’s about 22 hours older than the sales chart.</p></div>
+  <div><h2>What’s missing, and why</h2>
+    <p>Reviews, Metacritic, genres, tags, developers, release dates, owner estimates, and copies-sold or revenue estimates weren’t retrievable for this snapshot, so they show as Data unavailable rather than guesses.</p>
+    <p>The 7-day and 30-day views compare today’s live chart with Steam’s weekly charts. There’s no 24-hour or 90-day chart to compare against, and the year-end lists aren’t ranked, so those views stay empty. Game artwork isn’t shown because the page can’t load remote images.</p></div>
+  <div><h2>Titles matched by App ID</h2>
+    <p>Some games on the players chart were listed only by App ID. Where the ID belongs to a long-established game, the title was matched by reference and is underlined with dots. Six IDs couldn’t be matched and stay as App numbers.</p></div>
+</section>
+</div>
+
+<div id="tip" role="tooltip"></div>
+<div id="sheet" aria-hidden="true"><div class="scrim" data-close></div><div class="card" role="dialog" aria-modal="true" aria-labelledby="sh-title" id="card"></div></div>
+<script src="/assets/data.js"></script>
+<script src="/assets/app.js"></script>
+</body>
+</html>
