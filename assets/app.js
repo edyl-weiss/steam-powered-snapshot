@@ -15,17 +15,14 @@ const PERIODS = [["now","Snapshot"],["24h","24 hours"],["7d","7 days"],["30d","3
 const MODES = [
   {id:"ts",label:"Top sellers"},{id:"cur",label:"Most played"},{id:"peak",label:"24h peak"},
   {id:"movers",label:"Rank movers"},{id:"weeks",label:"Chart longevity"},
-  {id:"copies",label:"Est. copies",na:true},{id:"rev",label:"Est. revenue",na:true},
-  {id:"reviews",label:"Most reviewed",na:true},{id:"trend",label:"Trending",na:true},
+  {id:"copies",label:"Est. copies"},{id:"rev",label:"Est. revenue"},{id:"rev30",label:"30-day revenue"},
+  {id:"reviews",label:"Most reviewed"},{id:"trend",label:"Trending",na:true},
   {id:"breakout",label:"Breakout",na:true},{id:"gems",label:"Hidden gems",na:true}
 ];
 const NA_MODE_WHY = {
-  copies:"No public copies-sold data was retrievable for this snapshot.",
-  rev:"Revenue estimates need copies-sold data, which isn’t in this snapshot.",
-  reviews:"Review counts weren’t retrievable, and review growth needs two snapshots.",
   trend:"Trending needs change over time, and this page has one snapshot.",
   breakout:"Breakout compares recent activity to a past baseline, which needs history.",
-  gems:"Hidden gems need review scores and growth, neither of which is in this snapshot."
+  gems:"Hidden gems need review growth over time, which needs more than one snapshot of review counts."
 };
 const COLS = [
   {id:"rank",label:"#",cls:"rk",sort:false},
@@ -40,13 +37,14 @@ const COLS = [
   {id:"peak",label:"24h peak",sort:"peak"},
   {id:"mp",label:"Most played #",sort:"mp"},
   {id:"weeks",label:"Weeks on chart",sort:"weeks"},
-  {id:"reviews",label:"Reviews",na:true},{id:"score",label:"Review score",na:true},
-  {id:"meta",label:"Metacritic",na:true},{id:"owners",label:"Est. owners",na:true},
-  {id:"copies",label:"Est. copies",na:true},{id:"revenue",label:"Est. revenue",na:true},
-  {id:"genre",label:"Genre",na:true,l:true},{id:"release",label:"Release",na:true},
+  {id:"reviews",label:"Reviews",sort:"revN",det:true},{id:"score",label:"Review score",sort:"score",det:true},
+  {id:"meta",label:"Metacritic",sort:"meta",det:true},{id:"atpeak",label:"All-time peak",sort:"atpeak",det:true},
+  {id:"copies",label:"Est. copies",sort:"copiesV",det:true},{id:"revenue",label:"Est. revenue",sort:"revV",det:true},{id:"rev30",label:"Est. 30-day revenue",sort:"rev30V",det:true},
+  {id:"owners",label:"Est. owners",sort:"ownersV",det:true},
+  {id:"genre",label:"Genre",det:true,l:true},{id:"dev",label:"Developer",det:true,l:true},{id:"release",label:"Release",sort:"relTs",det:true},
   {id:"fresh",label:"Freshness",sort:false}
 ];
-const state = {period:"now", mode:"ts", q:"", sort:null, dir:-1, hideNA:true,
+const state = {period:"now", mode:"ts", q:"", sort:null, dir:-1, hideNA:false, scoreMin:0, revMin:0, tags:[], copiesMin:0, revenueMin:0, metaMin:0,
   price:null, pmin:"", pmax:"", noF2P:false, sale:false, discMin:0,
   pmetric:"cur", pthresh:0, chart:"any", newOnly:false};
 
@@ -60,6 +58,42 @@ const tipFor = k=>`Source: ${SRC[k].name}. Observed. Updated ${ago(SRC[k].at)} (
 const NA_TIP = "Data unavailable: not retrievable for this snapshot. No value is estimated in its place.";
 const title = g=>g.name || `App ${g.id}`;
 function hue(id){return (id*47)%360}
+const ALL_TAGS = [...new Set(Object.values(ENRICH).flatMap(e=>e.tags||[]))].filter(t=>!["DLC","Software"].includes(t)).sort().concat(["Software","DLC"]);
+const fmtS = n=>{ if(n==null) return ""; const a=Math.abs(n);
+  if(a>=1e9) return (n/1e9).toFixed(n>=1e10?0:1).replace(/\.0$/,"")+"B";
+  if(a>=1e6) return (n/1e6).toFixed(n>=1e7?0:1).replace(/\.0$/,"")+"M";
+  if(a>=1e3) return (n/1e3).toFixed(n>=1e4?0:1).replace(/\.0$/,"")+"K"; return String(Math.round(n)); };
+const fmtM = n=>"$"+fmtS(n);
+const fmtDate = s=>{ if(!s) return ""; const d=new Date(s+"T00:00:00Z"); return d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); };
+for(const g of DATA){ const e=ENRICH[g.id]; if(!e) continue; g.e=e;
+  if(e.reviews){ g.revN=e.reviews.n; g.score=e.reviews.pct; }
+  if(e.rev30) g.rev30V=e.rev30.v;
+  g.tags=e.tags||[];
+  if(e.meta) g.meta=e.meta;
+  if(e.peak) g.atpeak=e.peak.v;
+  if(e.copies&&e.copies.v) g.copiesV=e.copies.v;
+  if(e.revenue&&e.revenue.v) g.revV=e.revenue.v;
+  if(e.owners&&e.owners.v) g.ownersV=e.owners.v;
+  if(e.release) g.relTs=Date.parse(e.release);
+  g.dev=e.dev; g.pub=e.pub; }
+for(const g of DATA){ if(!g.tags) g.tags=[]; }
+function genreTip(g){ return (g.e&&g.e.genre?`Detail: ${g.e.genre}. `:"")+"Broad genre tags assigned by hand from Steam store categories and press descriptions, for filtering. Not live store tags."; }
+function estTip(o, money){ const f=money?fmtM:fmtS; const parts=[];
+  if(o.v) parts.push(`Estimate: ${money?"":"~"}${f(o.v)} from ${o.src}, ${o.at}.`);
+  if(o.lo!=null) parts.push(`Range across sources: ${f(o.lo)} to ${f(o.hi)} (${o.rangeSrc}).`);
+  if(o.floor) parts.push(o.floor+".");
+  if(o.note) parts.push(o.note);
+  if(o.conf==="single") parts.push("Only one estimate was found, so it couldn’t be cross-checked.");
+  if(o.conf==="low") parts.push("The source rates this estimate as low confidence.");
+  return parts.join(" "); }
+function estCell(o, money, altNote){
+  if(!o){ return altNote ? `<span class="dn" data-tip="${esc(altNote)}">Not applicable</span>` : null; }
+  const f=money?fmtM:fmtS;
+  if(o.floorOnly) return `<span data-tip="${esc(estTip(o,money))}"><span class="estv">${f(o.floorV)}+</span><span class="estr">publisher figure</span></span>`;
+  const main = o.v ? `<span class="estv">~${f(o.v)}</span>` : `<span class="estv rng">${f(o.lo)}–${f(o.hi)}</span>`;
+  const sub = (o.v && o.lo!=null) ? `<span class="estr">${f(o.lo)}–${f(o.hi)}</span>` : o.conf==="low" ? `<span class="estr">low confidence</span>` : (o.conf==="single" ? `<span class="estr">1 source</span>` : (o.floor?`<span class="estr">+ publisher figure</span>`:""));
+  if(!o.v && o.lo==null) return `<span class="dn" data-tip="${esc(estTip(o,money))}">Disputed</span>`;
+  return `<span data-tip="${esc(estTip(o,money))}">${main}${sub}</span>`; }
 function mono(g){const w=title(g).replace(/[^A-Za-z0-9 ]/g,"").split(/\s+/).filter(Boolean);return (w.length>1?w.slice(0,3).map(x=>x[0]).join(""):(w[0]||"?").slice(0,3)).toUpperCase()}
 
 function renderFresh(){
@@ -90,10 +124,17 @@ function renderFilters(){
      <div style="height:8px;padding:0"></div>${chipset("pthresh",PLAYER_Q.map(v=>[v,v?fmtK(v)+"+":"Any"]))}</div>
    <div class="fgroup"><h3>Narrow by chart</h3>${chipset("chart",[["any","Either chart"],["ts","Top sellers"],["mp","Most played"],["both","On both"]])}
      <label class="chk"><input type="checkbox" id="newOnly" ${state.newOnly?"checked":""}> New chart entries only</label></div>
+   <div class="fgroup"><h3>Narrow by genre</h3><div class="chips">${[["","Any"],...ALL_TAGS.map(t=>[t,t])].map(([v,l])=>`<button type="button" class="chip" data-tag="${esc(v)}" aria-pressed="${v?state.tags.includes(v):!state.tags.length}">${l}</button>`).join("")}</div></div>
+   <div class="fgroup"><h3>Narrow by review score</h3>${chipset("scoreMin",[[0,"Any"],[95,"95%+"],[90,"90%+"],[80,"80%+"],[70,"70%+"]])}</div>
+   <div class="fgroup"><h3>Narrow by review count</h3>${chipset("revMin",[[0,"Any"],[1000,"1K+"],[10000,"10K+"],[100000,"100K+"],[1000000,"1M+"]])}</div>
+   <div class="fgroup"><h3>Narrow by est. copies</h3>${chipset("copiesMin",[[0,"Any"],[100000,"100K+"],[1000000,"1M+"],[10000000,"10M+"]])}</div>
+   <div class="fgroup"><h3>Narrow by est. revenue</h3>${chipset("revenueMin",[[0,"Any"],[1000000,"$1M+"],[10000000,"$10M+"],[100000000,"$100M+"],[1000000000,"$1B+"]])}</div>
+   <div class="fgroup"><h3>Narrow by Metacritic</h3>${chipset("metaMin",[[0,"Any"],[90,"90+"],[80,"80+"],[70,"70+"]])}</div>
   </div>
-  <div class="unavail">Not available in this snapshot:
-   <ul><li>Genre</li><li>Steam tags</li><li>Metacritic score</li><li>Estimated copies sold</li><li>Estimated revenue</li><li>Review count</li><li>Reviews added in period</li><li>Review score</li><li>All-time peak</li><li>Release date</li><li>Developer or publisher search</li></ul></div>`;
+  <div class="unavail">Genre tags cover ${DATA.filter(g=>g.tags.length).length} of ${DATA.length} games, and you can pick more than one. Review, estimate and Metacritic filters only match games with sourced data. Not available in this snapshot:
+   <ul><li>Reviews added in period</li></ul></div>`;
   $("#filters").onclick = e=>{const c=e.target.closest(".chip"); if(!c) return;
+    if(c.dataset.tag!==undefined){ const t=c.dataset.tag; if(!t) state.tags=[]; else state.tags = state.tags.includes(t)? state.tags.filter(x=>x!==t) : [...state.tags,t]; renderFilters(); renderTable(); return; }
     const k=c.dataset.k, v=c.dataset.v;
     state[k] = (k==="price") ? (v==="null"?null:v) : (k==="pmetric"||k==="chart") ? v : Number(v);
     if(k==="price"){state.pmin="";state.pmax=""}
@@ -105,7 +146,7 @@ function renderFilters(){
 function fmtK(v){return v>=1000? (v/1000)+"K" : String(v)}
 
 function passes(g){
-  if(state.q){const q=state.q.toLowerCase(); if(!(title(g).toLowerCase().includes(q)||String(g.id).includes(q))) return false;}
+  if(state.q){const q=state.q.toLowerCase(); if(!(title(g).toLowerCase().includes(q)||String(g.id).includes(q)||(g.dev||"").toLowerCase().includes(q)||(g.pub||"").toLowerCase().includes(q))) return false;}
   const hasP = g.price!==undefined;
   if(state.price){ if(!hasP) return false; const p=g.price, f=g.free;
     if(state.price==="free"&&!f) return false;
@@ -125,6 +166,12 @@ function passes(g){
   if(state.chart==="mp"&&!g.mp) return false;
   if(state.chart==="both"&&!(g.ts&&g.mp)) return false;
   if(state.newOnly&&!g.isNew) return false;
+  if(state.scoreMin&&!(g.score>=state.scoreMin)) return false;
+  if(state.revMin&&!(g.revN>=state.revMin)) return false;
+  if(state.copiesMin&&!(g.copiesV>=state.copiesMin)) return false;
+  if(state.revenueMin&&!(g.revV>=state.revenueMin)) return false;
+  if(state.metaMin&&!(g.meta>=state.metaMin)) return false;
+  if(state.tags.length && !state.tags.some(t=>g.tags.includes(t))) return false;
   return true;
 }
 function modeList(list){
@@ -134,6 +181,10 @@ function modeList(list){
   if(m==="peak") return list.filter(g=>g.peak).sort((a,b)=>b.peak-a.peak);
   if(m==="movers") return list.filter(g=>typeof g.chg==="number").sort((a,b)=>b.chg-a.chg||a.ts-b.ts);
   if(m==="weeks") return list.filter(g=>g.weeks).sort((a,b)=>b.weeks-a.weeks);
+  if(m==="copies") return list.filter(g=>g.copiesV).sort((a,b)=>b.copiesV-a.copiesV);
+  if(m==="rev") return list.filter(g=>g.revV).sort((a,b)=>b.revV-a.revV);
+  if(m==="reviews") return list.filter(g=>g.revN).sort((a,b)=>b.revN-a.revN);
+  if(m==="rev30") return list.filter(g=>g.rev30V).sort((a,b)=>b.rev30V-a.rev30V);
   return [];
 }
 function sortBy(list){
@@ -151,7 +202,7 @@ function activeCols(){ return COLS.filter(c=>!c.hist||PERIOD_WEEK[state.period])
 function renderHead(){
   $("#thead").innerHTML = activeCols().map(c=>{
     const s = state.sort===c.sort && c.sort ? (state.dir<0?"descending":"ascending") : null;
-    const cls=[c.cls||"", c.na?"na na-col nosort":"", !c.sort&&!c.na?"nosort":"", c.l?"l":""].join(" ");
+    const cls=[c.cls||"", c.det?"na-col":"", !c.sort?"nosort":"", c.l?"l":""].join(" ");
     return `<th scope="col" class="${cls}" data-sort="${c.sort||""}" ${s?`aria-sort="${s}"`:""} ${c.na?`data-tip="${esc(NA_TIP)}"`:c.hist?`data-tip="${esc(histTip())}"`:c.tip?`data-tip="${esc(c.tip)}"`:""}>${c.label}</th>`;}).join("");
 }
 $("#thead").onclick = e=>{const th=e.target.closest("th"); if(!th||!th.dataset.sort) return;
@@ -194,6 +245,17 @@ function cell(g,c,i,maxCur){
     case "weeks": return g.weeks? `<td ${tsTip}>${fmt(g.weeks)}</td>` : `<td>${dn}</td>`;
     case "fresh": {const t = g.ts&&g.mp ? Math.min(TS_AT,MP_AT) : g.ts?TS_AT:MP_AT;
       return `<td class="fr" data-tip="${esc((g.ts?tipFor("ts")+" ":"")+(g.mp?tipFor("mp"):""))}">Updated ${ago(t)}</td>`;}
+    case "reviews": { const r=g.e&&g.e.reviews&&g.e.reviews.n?g.e.reviews:null; return `<td class="na-col">${r?`<span data-tip="${esc(`Reported from Steam by ${r.src}, ${r.at}.`)}">${r.approx?"~":""}${fmtS(r.n)}</span>`:dn}</td>`; }
+    case "score": { const r=g.e&&g.e.reviews&&g.e.reviews.pct!=null?g.e.reviews:null; return `<td class="na-col">${r?`<span class="${r.pct>=80?"up":r.pct<60?"down":""}" data-tip="${esc(`Share of positive Steam reviews, via ${r.pctSrc||(r.src+", "+r.at)}.`)}">${r.approx?"~":""}${r.pct}%</span>`:dn}</td>`; }
+    case "meta": return `<td class="na-col">${g.meta?`<span data-tip="${esc(g.e.metaSrc)}">${g.meta}</span>`:dn}</td>`;
+    case "atpeak": { const p=g.e&&g.e.peak; return `<td class="na-col">${p?`<span data-tip="${esc(`${p.src}, ${p.at}.`+(p.tracked?" This is the highest count SteamPulse has recorded, so it can miss records set before its tracking began.":""))}">${fmt(p.v)}${p.tracked?'<span class="estr">tracked peak</span>':""}</span>`:dn}</td>`; }
+    case "rev30": { const x=g.e&&estCell(g.e.rev30,true); return `<td class="na-col">${x||dn}</td>`; }
+    case "copies": { const x=g.e&&estCell(g.e.copies,false); return `<td class="na-col">${x||dn}</td>`; }
+    case "revenue": { const x=g.e&&estCell(g.e.revenue,true,g.e.revenueNote); return `<td class="na-col">${x||dn}</td>`; }
+    case "owners": { const x=g.e&&estCell(g.e.owners,false); return `<td class="na-col">${x||(g.free?dn:`<span class="dn" data-tip="Owner estimates are shown for free-to-play games, where copies sold doesn’t apply.">Not applicable</span>`)}</td>`; }
+    case "genre": return `<td class="na-col l">${g.tags.length?`<span data-tip="${esc(genreTip(g))}">${esc(g.tags.join(", "))}</span>`:`<span class="dn" data-tip="No reliable store or press description was found for this new release, so it wasn’t tagged rather than guessed.">Not yet tagged</span>`}</td>`;
+    case "dev": return `<td class="na-col l">${g.dev?esc(g.dev):dn}</td>`;
+    case "release": return `<td class="na-col">${g.e&&g.e.release?`<span data-tip="${esc(g.e.releaseNote||"Steam release date")}">${fmtDate(g.e.release)}</span>`:dn}</td>`;
     default: return `<td class="na-col${c.l?" l":""}">${dn}</td>`;
   }
 }
@@ -218,6 +280,9 @@ function renderTable(){
     $("#count").textContent=""; return;
   }
   const list = sortBy(modeList(DATA.filter(passes)));
+  if(["copies","rev","reviews","rev30"].includes(state.mode) && state.period==="now"){ cav.hidden=false;
+    cav.textContent = state.mode==="rev30" ? `Ranked by Raijin’s estimate of Steam revenue over the 30 days to Sep 28, for the ${DATA.filter(g=>g.rev30V).length} charting games it covers. Raijin rates many of these as low confidence, and they’re marked.` : state.mode==="reviews" ? `Ranked by total Steam reviews for the ${DATA.filter(g=>g.revN).length} games with sourced review data. Counts come from different dates, and review growth over a period can’t be measured from one snapshot.`
+      : `Only the ${DATA.filter(g=>state.mode==="copies"?g.copiesV:g.revV).length} games with a sourced estimate are ranked. Estimates come from different firms and dates, and they often disagree, so hover or tap a figure for its source and range.`; }
   const maxCur = Math.max(...DATA.map(g=>g.cur||0));
   $("#count").textContent = `${list.length} game${list.length===1?"":"s"}`;
   if(!list.length){tb.innerHTML=`<tr><td colspan="${span}" class="empty l"><b>No games match these filters</b>Loosen a filter or clear the search to see more.</td></tr>`;return;}
@@ -227,7 +292,7 @@ $("#tb").onclick = e=>{const tr=e.target.closest("tr[data-id]"); if(tr) openShee
 $("#tb").onkeydown = e=>{if(e.key==="Enter"){const tr=e.target.closest("tr[data-id]"); if(tr) openSheet(+tr.dataset.id)}};
 
 function mrow(k,v,kind,src){
-  const tag = kind==="obs"?`<span class="tag obs">Observed</span>`:kind==="rep"?`<span class="tag rep">Press-reported</span>`:`<span class="tag na">Data unavailable</span>`;
+  const tag = kind==="obs"?`<span class="tag obs">Observed</span>`:kind==="rep"?`<span class="tag rep">Reported</span>`:kind==="est"?`<span class="tag est">Estimate</span>`:`<span class="tag na">Data unavailable</span>`;
   return `<div class="mrow"><span class="k">${k}</span><span class="v">${v}</span><span class="src">${tag}${src}</span></div>`;
 }
 let lastFocus=null;
@@ -256,9 +321,26 @@ function openSheet(id){
   const yr=YROWS.find(r=>r.id===g.id);
   h+= yr ? mrow("Steam year-end top 12 by revenue", yr.y.join(", "),"rep",`Cross-checked press coverage of Steam’s Best of lists. ${yr.note||""}`) : mrow("Steam year-end top 12 by revenue","None, 2020 to 2025","rep","Not in any cross-checked top 12 list from 2020 to 2025.");
   for(const r of (REPORTED[g.id]||[])) h+=mrow(r.k, r.v, "rep", `${r.src}, ${r.at}. Not Steam data.`);
-  for(const k of ["Developer","Publisher","Release date","Genres and tags","Steam reviews","Review score","Metacritic","Estimated owners","Estimated copies sold","Estimated revenue","All-time peak players"])
-    if(!(k==="All-time peak players"&&REPORTED[g.id])) h+=mrow(k,NA,"na",naSrc);
-  h+=`<p class="note">Steam ranks top sellers by revenue, not units, so chart position isn’t a copies-sold figure.</p>`;
+  const e=g.e||{};
+  const erow=(k,o,money)=>{ if(!o) return mrow(k,NA,"na",naSrc);
+    const f=money?fmtM:fmtS; const v=o.v?`~${f(o.v)}`:(o.lo!=null?`${f(o.lo)}–${f(o.hi)}`:"Disputed");
+    return mrow(k,v,"est",estTip(o,money)); };
+  h+= e.dev? mrow("Developer",esc(e.dev),"rep","Store metadata, via third-party trackers.") : mrow("Developer",NA,"na",naSrc);
+  h+= e.pub? mrow("Publisher",esc(e.pub),"rep","Store metadata, via third-party trackers.") : mrow("Publisher",NA,"na",naSrc);
+  h+= e.release? mrow("Release date",fmtDate(e.release),"rep",esc(e.releaseNote||"Steam release date.")) : mrow("Release date",NA,"na",naSrc);
+  h+= g.tags.length? mrow("Genre tags",esc(g.tags.join(", ")),"rep",esc(genreTip(g))) : mrow("Genre tags","Not yet tagged","na","No reliable description found for this new release.");
+  const rv=e.reviews;
+  h+= rv&&rv.n? mrow("Steam reviews",`${rv.approx?"~":""}${fmt(rv.n)}`,"rep",`${esc(rv.src)}, ${esc(rv.at)}. Read from Steam by a third party.`) : mrow("Steam reviews",NA,"na",naSrc);
+  h+= rv&&rv.pct!=null? mrow("Review score",`${rv.pct}% positive`,"rep",esc(rv.pctSrc||(rv.src+", "+rv.at))+".") : mrow("Review score",NA,"na",naSrc);
+  h+= e.meta? mrow("Metacritic",e.meta,"rep",esc(e.metaSrc)) : mrow("Metacritic",NA,"na",naSrc);
+  if(!REPORTED[g.id]) h+= e.peak? mrow(e.peak.tracked?"Tracked peak players":"All-time peak players",fmt(e.peak.v),"rep",`${esc(e.peak.src)}, ${esc(e.peak.at)}.`+(e.peak.tracked?" May miss records set before tracking began.":"")) : mrow("All-time peak players",NA,"na",naSrc);
+  h+= erow("Estimated copies sold",e.copies,false);
+  h+= e.revenueNote && !e.revenue ? mrow("Estimated revenue","Not applicable","na",esc(e.revenueNote)) : erow("Estimated revenue",e.revenue,true);
+  if(g.free||e.owners) h+= erow("Estimated owners",e.owners,false);
+  h+= e.rev30 ? erow("Estimated Steam revenue, last 30 days",e.rev30,true) : "";
+  if(e.xplat){ const x=e.xplat; const v = x.lo!=null ? `${fmtS(x.lo)}–${fmtS(x.hi)}` : "See note";
+    h+= mrow("Players, all platforms", x.lo!=null ? `${v} ${esc(x.unit.split(",")[0])}` : v, "est", `${esc(x.src)}, ${esc(x.at)}. ${x.floor?esc(x.floor)+". ":""}${x.note?esc(x.note):""}`); }
+  h+=`<p class="note">Steam ranks top sellers by revenue, not units, so chart position isn’t a copies-sold figure. Estimates are third-party models, not Valve data, and they often disagree.</p>`;
   $("#card").innerHTML=h;
   $("#sheet").classList.add("on"); $("#sheet").setAttribute("aria-hidden","false");
   $("#card .close").focus();
@@ -278,8 +360,8 @@ document.addEventListener("scroll",()=>tip.classList.remove("on"),true);
 
 $("#q").oninput=e=>{state.q=e.target.value.trim();renderTable()};
 $("#ftoggle").onclick=e=>{const f=$("#filters"); f.hidden=!f.hidden; e.currentTarget.setAttribute("aria-expanded",String(!f.hidden)); if(!f.hidden) renderFilters();};
-$("#natoggle").onclick=e=>{state.hideNA=!state.hideNA; e.currentTarget.textContent=state.hideNA?"Show unavailable columns":"Hide unavailable columns"; e.currentTarget.setAttribute("aria-pressed",String(!state.hideNA)); renderTable();};
-$("#natoggle").textContent="Show unavailable columns"; $("#natoggle").setAttribute("aria-pressed","false");
+$("#natoggle").onclick=e=>{state.hideNA=!state.hideNA; e.currentTarget.textContent=state.hideNA?"Show detail columns":"Hide detail columns"; e.currentTarget.setAttribute("aria-pressed",String(!state.hideNA)); renderTable();};
+$("#natoggle").textContent="Hide detail columns"; $("#natoggle").setAttribute("aria-pressed","true");
 
 // ---------- history rendering ----------
 function nameOf(id){ const g=DATA.find(x=>x.id===id); return g?title(g):(EXTRA_NAMES[id]||`App ${id}`); }
