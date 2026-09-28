@@ -1,4 +1,4 @@
-/* Steam Performance Snapshot: rendering and interaction. Data lives in data.js. */
+/* Steam Powered Snapshot: rendering and interaction. Data lives in data.js. */
 const TS_AT = Date.parse("2026-09-28T01:05:00Z");
 const MP_AT = Date.parse("2026-09-27T03:15:00Z");
 const SRC = {
@@ -7,7 +7,6 @@ const SRC = {
 };
 const REPORTED = {
   1867240: [
-    {k:"Launch sales", v:"1M+ copies in first 24 hours", src:"PC Gamer report", at:"Aug 2026"},
     {k:"All-time peak players", v:"428K+", src:"ComicBook.com report", at:"Sep 25, 2026"}
   ]
 };
@@ -15,7 +14,7 @@ const PERIODS = [["now","Snapshot"],["24h","24 hours"],["7d","7 days"],["30d","3
 const MODES = [
   {id:"ts",label:"Top sellers"},{id:"cur",label:"Most played"},{id:"peak",label:"24h peak"},
   {id:"movers",label:"Rank movers"},{id:"weeks",label:"Chart longevity"},
-  {id:"copies",label:"Est. copies"},{id:"rev",label:"Est. revenue"},{id:"rev30",label:"30-day revenue"},
+  
   {id:"reviews",label:"Most reviewed"},{id:"trend",label:"Trending",na:true},
   {id:"breakout",label:"Breakout",na:true},{id:"gems",label:"Hidden gems",na:true}
 ];
@@ -27,25 +26,25 @@ const NA_MODE_WHY = {
 const COLS = [
   {id:"rank",label:"#",cls:"rk",sort:false},
   {id:"name",label:"Game",cls:"gm l",sort:"name"},
-  {id:"chg",label:"Rank change",sort:"chg",tip:"Steam’s own top-seller change versus its previous chart"},
+  {id:"cur",label:"Players now",sort:"cur"},
+  {id:"peak",label:"24h peak",sort:"peak"},
+  {id:"score",label:"Review score",sort:"score",det:true},
+  {id:"atpeak",label:"All-time peak",sort:"atpeak",det:true},
+  {id:"weeks",label:"Weeks on chart",sort:"weeks"},
   {id:"ts",label:"Top seller #",sort:"ts"},
+  {id:"chg",label:"Rank change",sort:"chg",tip:"Steam’s own top-seller change versus its previous chart"},
   {id:"then",label:"Rank then",sort:"then",hist:true},
   {id:"mv",label:"Move",sort:"mv",hist:true},
   {id:"price",label:"Price",sort:"price"},
-  {id:"disc",label:"Discount",sort:"disc"},
-  {id:"cur",label:"Players now",sort:"cur"},
-  {id:"peak",label:"24h peak",sort:"peak"},
+  {id:"reviews",label:"Reviews",sort:"revN",det:true},
+  {id:"genre",label:"Genre",det:true,l:true},
   {id:"mp",label:"Most played #",sort:"mp"},
-  {id:"weeks",label:"Weeks on chart",sort:"weeks"},
-  {id:"reviews",label:"Reviews",sort:"revN",det:true},{id:"score",label:"Review score",sort:"score",det:true},
-  {id:"meta",label:"Metacritic",sort:"meta",det:true},{id:"atpeak",label:"All-time peak",sort:"atpeak",det:true},
-  {id:"copies",label:"Est. copies",sort:"copiesV",det:true},{id:"revenue",label:"Est. revenue",sort:"revV",det:true},{id:"rev30",label:"Est. 30-day revenue",sort:"rev30V",det:true},
-  {id:"owners",label:"Est. owners",sort:"ownersV",det:true},
-  {id:"genre",label:"Genre",det:true,l:true},{id:"dev",label:"Developer",det:true,l:true},{id:"release",label:"Release",sort:"relTs",det:true},
-  {id:"fresh",label:"Freshness",sort:false}
+  {id:"dev",label:"Developer",det:true,l:true},
+  {id:"release",label:"Release",sort:"relTs",det:true},
+  {id:"fresh",label:"Updated",sort:false}
 ];
 const state = {period:"now", mode:"ts", q:"", sort:null, dir:-1, hideNA:false, scoreMin:0, revMin:0, tags:[], copiesMin:0, revenueMin:0, metaMin:0,
-  price:null, pmin:"", pmax:"", noF2P:false, sale:false, discMin:0,
+  price:null, pmin:"", pmax:"", noF2P:false,
   pmetric:"cur", pthresh:0, chart:"any", newOnly:false};
 
 const $ = s=>document.querySelector(s);
@@ -58,6 +57,16 @@ const tipFor = k=>`Source: ${SRC[k].name}. Observed. Updated ${ago(SRC[k].at)} (
 const NA_TIP = "Data unavailable: not retrievable for this snapshot. No value is estimated in its place.";
 const title = g=>g.name || `App ${g.id}`;
 function hue(id){return (id*47)%360}
+/* Game art is loaded from Steam's image CDN. Hosts that block outside images (like the claude.ai preview) fall back to the colored initials. */
+const STEAM_IMG = id=>[`https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/${id}/`,`https://cdn.cloudflare.steamstatic.com/steam/apps/${id}/`];
+const IMAGES_ON = !/claude\.ai|claudeusercontent|anthropic/.test(location.hostname);
+function thumb(id,file){ if(!IMAGES_ON) return ""; const [a,b]=STEAM_IMG(id);
+  const alt = file==="header.jpg" ? "" : `${b}header.jpg`;
+  return `<img src="${a}${file}" data-fb="${b}${file}" data-fb2="${alt||a+'header.jpg'}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer">`; }
+document.addEventListener("error",e=>{ const im=e.target; if(!(im instanceof HTMLImageElement)) return;
+  if(im.dataset.fb){ const n=im.dataset.fb; delete im.dataset.fb; im.src=n; return; }
+  if(im.dataset.fb2){ const n=im.dataset.fb2; delete im.dataset.fb2; im.src=n; return; }
+  const box=im.closest(".banner"); im.remove(); if(box) box.remove(); }, true);
 const ALL_TAGS = [...new Set(Object.values(ENRICH).flatMap(e=>e.tags||[]))].filter(t=>!["DLC","Software"].includes(t)).sort().concat(["Software","DLC"]);
 const fmtS = n=>{ if(n==null) return ""; const a=Math.abs(n);
   if(a>=1e9) return (n/1e9).toFixed(n>=1e10?0:1).replace(/\.0$/,"")+"B";
@@ -118,8 +127,6 @@ function renderFilters(){
    <div class="fgroup"><h3>Narrow by price</h3>${chipset("price",[["null","Any"],...PRICE_Q])}
      <div class="custom">Custom $<input id="pmin" inputmode="decimal" placeholder="min" value="${state.pmin}"> to $<input id="pmax" inputmode="decimal" placeholder="max" value="${state.pmax}"></div>
      <label class="chk"><input type="checkbox" id="noF2P" ${state.noF2P?"checked":""}> Exclude free-to-play games</label></div>
-   <div class="fgroup"><h3>Narrow by discount</h3>${chipset("discMin",[[0,"Any"],[10,"10%+"],[25,"25%+"],[50,"50%+"],[75,"75%+"]])}
-     <label class="chk"><input type="checkbox" id="sale" ${state.sale?"checked":""}> On sale only</label></div>
    <div class="fgroup"><h3>Narrow by players</h3>${chipset("pmetric",[["cur","Players now"],["peak","24h peak"]])}
      <div style="height:8px;padding:0"></div>${chipset("pthresh",PLAYER_Q.map(v=>[v,v?fmtK(v)+"+":"Any"]))}</div>
    <div class="fgroup"><h3>Narrow by chart</h3>${chipset("chart",[["any","Either chart"],["ts","Top sellers"],["mp","Most played"],["both","On both"]])}
@@ -127,11 +134,8 @@ function renderFilters(){
    <div class="fgroup"><h3>Narrow by genre</h3><div class="chips">${[["","Any"],...ALL_TAGS.map(t=>[t,t])].map(([v,l])=>`<button type="button" class="chip" data-tag="${esc(v)}" aria-pressed="${v?state.tags.includes(v):!state.tags.length}">${l}</button>`).join("")}</div></div>
    <div class="fgroup"><h3>Narrow by review score</h3>${chipset("scoreMin",[[0,"Any"],[95,"95%+"],[90,"90%+"],[80,"80%+"],[70,"70%+"]])}</div>
    <div class="fgroup"><h3>Narrow by review count</h3>${chipset("revMin",[[0,"Any"],[1000,"1K+"],[10000,"10K+"],[100000,"100K+"],[1000000,"1M+"]])}</div>
-   <div class="fgroup"><h3>Narrow by est. copies</h3>${chipset("copiesMin",[[0,"Any"],[100000,"100K+"],[1000000,"1M+"],[10000000,"10M+"]])}</div>
-   <div class="fgroup"><h3>Narrow by est. revenue</h3>${chipset("revenueMin",[[0,"Any"],[1000000,"$1M+"],[10000000,"$10M+"],[100000000,"$100M+"],[1000000000,"$1B+"]])}</div>
-   <div class="fgroup"><h3>Narrow by Metacritic</h3>${chipset("metaMin",[[0,"Any"],[90,"90+"],[80,"80+"],[70,"70+"]])}</div>
   </div>
-  <div class="unavail">Genre tags cover ${DATA.filter(g=>g.tags.length).length} of ${DATA.length} games, and you can pick more than one. Review, estimate and Metacritic filters only match games with sourced data. Not available in this snapshot:
+  <div class="unavail">Genre tags cover ${DATA.filter(g=>g.tags.length).length} of ${DATA.length} games, and you can pick more than one. Review filters only match games with sourced review data. Not available in this snapshot:
    <ul><li>Reviews added in period</li></ul></div>`;
   $("#filters").onclick = e=>{const c=e.target.closest(".chip"); if(!c) return;
     if(c.dataset.tag!==undefined){ const t=c.dataset.tag; if(!t) state.tags=[]; else state.tags = state.tags.includes(t)? state.tags.filter(x=>x!==t) : [...state.tags,t]; renderFilters(); renderTable(); return; }
@@ -141,7 +145,7 @@ function renderFilters(){
     renderFilters(); renderTable();};
   $("#pmin").oninput=e=>{state.pmin=e.target.value;state.price=null;renderTable()};
   $("#pmax").oninput=e=>{state.pmax=e.target.value;state.price=null;renderTable()};
-  for(const id of ["noF2P","sale","newOnly"]) $("#"+id).onchange=e=>{state[id]=e.target.checked;renderTable()};
+  for(const id of ["noF2P","newOnly"]) $("#"+id).onchange=e=>{state[id]=e.target.checked;renderTable()};
 }
 function fmtK(v){return v>=1000? (v/1000)+"K" : String(v)}
 
@@ -159,8 +163,6 @@ function passes(g){
   if(!isNaN(mn)&&(!hasP||g.price<mn)) return false;
   if(!isNaN(mx)&&(!hasP||g.price>mx)) return false;
   if(state.noF2P&&g.free) return false;
-  if(state.sale&&!(g.disc>0)) return false;
-  if(state.discMin&&!(g.disc>=state.discMin)) return false;
   if(state.pthresh){const v=g[state.pmetric]; if(v===undefined||v<state.pthresh) return false;}
   if(state.chart==="ts"&&!g.ts) return false;
   if(state.chart==="mp"&&!g.mp) return false;
@@ -168,9 +170,6 @@ function passes(g){
   if(state.newOnly&&!g.isNew) return false;
   if(state.scoreMin&&!(g.score>=state.scoreMin)) return false;
   if(state.revMin&&!(g.revN>=state.revMin)) return false;
-  if(state.copiesMin&&!(g.copiesV>=state.copiesMin)) return false;
-  if(state.revenueMin&&!(g.revV>=state.revenueMin)) return false;
-  if(state.metaMin&&!(g.meta>=state.metaMin)) return false;
   if(state.tags.length && !state.tags.some(t=>g.tags.includes(t))) return false;
   return true;
 }
@@ -219,7 +218,7 @@ function cell(g,c,i,maxCur){
     case "name": {
       const nm = g.name ? (g.nameSrc==="ref" ? `<span class="ref" data-tip="Title matched from Steam App ${g.id} by reference. The source chart listed only the ID.">${esc(g.name)}</span>` : esc(g.name)) : `App ${g.id}`;
       const meta = g.name ? `App ${g.id}` : `<span data-tip="The source chart listed this game by App ID only.">Title not in source</span>`;
-      return `<td class="gm"><div class="game"><span class="mono" aria-hidden="true" style="background:hsl(${hue(g.id)} 28% 30%)">${esc(mono(g))}</span><div><div class="gname">${nm}</div><div class="gmeta">${meta}</div></div></div></td>`;}
+      return `<td class="gm"><div class="game"><span class="mono" aria-hidden="true" style="background:hsl(${hue(g.id)} 28% 30%)">${esc(mono(g))}${thumb(g.id,"capsule_231x87.jpg")}</span><div><div class="gname">${nm}</div><div class="gmeta">${meta}</div></div></div></td>`;}
     case "chg":
       if(!g.ts) return `<td>${dn}</td>`;
       if(g.isNew) return `<td ${tsTip}><span class="new">New</span></td>`;
@@ -235,16 +234,13 @@ function cell(g,c,i,maxCur){
     case "price":
       if(g.price===undefined) return `<td>${dn}</td>`;
       if(g.free) return `<td class="pc" ${tsTip}>Free to Play</td>`;
-      return `<td class="pc" ${tsTip}>${g.disc?`<span class="strike">$${g.orig.toFixed(2)}</span>`:""}$${g.price.toFixed(2)}</td>`;
-    case "disc":
-      if(g.disc===undefined) return `<td>${dn}</td>`;
-      return `<td ${tsTip}>${g.disc?`<span class="disc">−${g.disc}%</span>`:`<span class="dn">None</span>`}</td>`;
+      return `<td class="pc" data-tip="${esc("Regular US price on Steam, without any sale discount. "+tipFor("ts"))}">$${g.price.toFixed(2)}</td>`;
     case "cur": return g.cur? `<td ${mpTip}>${fmt(g.cur)}<span class="bar"><i style="width:${Math.max(2,g.cur/maxCur*100)}%"></i></span></td>` : `<td>${dn}</td>`;
     case "peak": return g.peak? `<td ${mpTip}>${fmt(g.peak)}</td>` : `<td>${dn}</td>`;
     case "mp": return g.mp? `<td ${mpTip}>${g.mp}</td>` : `<td><span class="dn" data-tip="Not in Steam’s top 100 most played at snapshot time.">Not in top 100</span></td>`;
     case "weeks": return g.weeks? `<td ${tsTip}>${fmt(g.weeks)}</td>` : `<td>${dn}</td>`;
     case "fresh": {const t = g.ts&&g.mp ? Math.min(TS_AT,MP_AT) : g.ts?TS_AT:MP_AT;
-      return `<td class="fr" data-tip="${esc((g.ts?tipFor("ts")+" ":"")+(g.mp?tipFor("mp"):""))}">Updated ${ago(t)}</td>`;}
+      return `<td class="fr" data-tip="${esc((g.ts?tipFor("ts")+" ":"")+(g.mp?tipFor("mp"):""))}">${ago(t).replace(" ago","")}</td>`;}
     case "reviews": { const r=g.e&&g.e.reviews&&g.e.reviews.n?g.e.reviews:null; return `<td class="na-col">${r?`<span data-tip="${esc(`Reported from Steam by ${r.src}, ${r.at}.`)}">${r.approx?"~":""}${fmtS(r.n)}</span>`:dn}</td>`; }
     case "score": { const r=g.e&&g.e.reviews&&g.e.reviews.pct!=null?g.e.reviews:null; return `<td class="na-col">${r?`<span class="${r.pct>=80?"up":r.pct<60?"down":""}" data-tip="${esc(`Share of positive Steam reviews, via ${r.pctSrc||(r.src+", "+r.at)}.`)}">${r.approx?"~":""}${r.pct}%</span>`:dn}</td>`; }
     case "meta": return `<td class="na-col">${g.meta?`<span data-tip="${esc(g.e.metaSrc)}">${g.meta}</span>`:dn}</td>`;
@@ -280,7 +276,7 @@ function renderTable(){
     $("#count").textContent=""; return;
   }
   const list = sortBy(modeList(DATA.filter(passes)));
-  if(["copies","rev","reviews","rev30"].includes(state.mode) && state.period==="now"){ cav.hidden=false;
+  if(state.mode==="reviews" && state.period==="now"){ cav.hidden=false;
     cav.textContent = state.mode==="rev30" ? `Ranked by Raijin’s estimate of Steam revenue over the 30 days to Sep 28, for the ${DATA.filter(g=>g.rev30V).length} charting games it covers. Raijin rates many of these as low confidence, and they’re marked.` : state.mode==="reviews" ? `Ranked by total Steam reviews for the ${DATA.filter(g=>g.revN).length} games with sourced review data. Counts come from different dates, and review growth over a period can’t be measured from one snapshot.`
       : `Only the ${DATA.filter(g=>state.mode==="copies"?g.copiesV:g.revV).length} games with a sourced estimate are ranked. Estimates come from different firms and dates, and they often disagree, so hover or tap a figure for its source and range.`; }
   const maxCur = Math.max(...DATA.map(g=>g.cur||0));
@@ -302,16 +298,16 @@ function openSheet(id){
   const ts=s=>`${SRC.ts.name}. Updated ${ago(TS_AT)}.`, mp=`${SRC.mp.name}. Updated ${ago(MP_AT)}.`;
   const NA="Data unavailable", naSrc="Not retrievable for this snapshot.";
   let h=`<button class="btn close" data-close>Close</button><div class="gmeta">App ${g.id}${g.nameSrc==="ref"?", title matched by reference":""}</div><h2 id="sh-title">${esc(title(g))}</h2>`;
+  if(IMAGES_ON) h+=`<div class="banner">${thumb(g.id,"header.jpg")}</div>`;
   h+=`<p class="note" style="margin-top:6px"><a href="https://store.steampowered.com/app/${g.id}/" target="_blank" rel="noopener">Open on Steam</a></p>`;
   if(HARDWARE.has(g.id)) h+=`<p class="note">This is hardware, not a game. Steam counts it on its top-sellers chart.</p>`;
   h+= g.ts? mrow("Top seller rank", "#"+g.ts,"obs",ts()) : mrow("Top seller rank","Not in top 100","obs",ts());
   if(g.ts){
     h+=mrow("Rank change", g.isNew?"New entry":g.chg>0?`Up ${g.chg}`:g.chg<0?`Down ${-g.chg}`:"No change","obs",ts());
     h+=mrow("Weeks on chart", fmt(g.weeks),"obs",ts());
-    h+=mrow("Price", g.free?"Free to play":`$${g.price.toFixed(2)}`+(g.disc?` (was $${g.orig.toFixed(2)})`:""),"obs",ts());
-    h+=mrow("Discount", g.disc?`${g.disc}%`:"None","obs",ts());
+    h+=mrow("Regular price", g.free?"Free to play":`$${g.price.toFixed(2)}`,"obs","Regular US price, without any sale discount. "+ts());
   } else {
-    h+=mrow("Price",NA,"na",naSrc); h+=mrow("Discount",NA,"na",naSrc);
+    h+=mrow("Price",NA,"na",naSrc);
   }
   h+= g.cur? mrow("Players now", fmt(g.cur),"obs",mp) : mrow("Players now",NA,"na","Not in the top 100 most played at snapshot time.");
   h+= g.peak? mrow("24h peak players", fmt(g.peak),"obs",mp) : mrow("24h peak players",NA,"na","Not in the top 100 most played at snapshot time.");
@@ -332,15 +328,10 @@ function openSheet(id){
   const rv=e.reviews;
   h+= rv&&rv.n? mrow("Steam reviews",`${rv.approx?"~":""}${fmt(rv.n)}`,"rep",`${esc(rv.src)}, ${esc(rv.at)}. Read from Steam by a third party.`) : mrow("Steam reviews",NA,"na",naSrc);
   h+= rv&&rv.pct!=null? mrow("Review score",`${rv.pct}% positive`,"rep",esc(rv.pctSrc||(rv.src+", "+rv.at))+".") : mrow("Review score",NA,"na",naSrc);
-  h+= e.meta? mrow("Metacritic",e.meta,"rep",esc(e.metaSrc)) : mrow("Metacritic",NA,"na",naSrc);
   if(!REPORTED[g.id]) h+= e.peak? mrow(e.peak.tracked?"Tracked peak players":"All-time peak players",fmt(e.peak.v),"rep",`${esc(e.peak.src)}, ${esc(e.peak.at)}.`+(e.peak.tracked?" May miss records set before tracking began.":"")) : mrow("All-time peak players",NA,"na",naSrc);
-  h+= erow("Estimated copies sold",e.copies,false);
-  h+= e.revenueNote && !e.revenue ? mrow("Estimated revenue","Not applicable","na",esc(e.revenueNote)) : erow("Estimated revenue",e.revenue,true);
-  if(g.free||e.owners) h+= erow("Estimated owners",e.owners,false);
-  h+= e.rev30 ? erow("Estimated Steam revenue, last 30 days",e.rev30,true) : "";
   if(e.xplat){ const x=e.xplat; const v = x.lo!=null ? `${fmtS(x.lo)}–${fmtS(x.hi)}` : "See note";
     h+= mrow("Players, all platforms", x.lo!=null ? `${v} ${esc(x.unit.split(",")[0])}` : v, "est", `${esc(x.src)}, ${esc(x.at)}. ${x.floor?esc(x.floor)+". ":""}${x.note?esc(x.note):""}`); }
-  h+=`<p class="note">Steam ranks top sellers by revenue, not units, so chart position isn’t a copies-sold figure. Estimates are third-party models, not Valve data, and they often disagree.</p>`;
+  h+=`<p class="note">Steam ranks top sellers by revenue, not units, so chart position isn’t a copies-sold figure. Review, peak and genre details come from third-party trackers, each labeled with its source and date.</p>`;
   $("#card").innerHTML=h;
   $("#sheet").classList.add("on"); $("#sheet").setAttribute("aria-hidden","false");
   $("#card .close").focus();
@@ -359,7 +350,6 @@ document.addEventListener("mouseover",e=>{const el=e.target.closest("[data-tip]"
 document.addEventListener("scroll",()=>tip.classList.remove("on"),true);
 
 $("#q").oninput=e=>{state.q=e.target.value.trim();renderTable()};
-$("#ftoggle").onclick=e=>{const f=$("#filters"); f.hidden=!f.hidden; e.currentTarget.setAttribute("aria-expanded",String(!f.hidden)); if(!f.hidden) renderFilters();};
 $("#natoggle").onclick=e=>{state.hideNA=!state.hideNA; e.currentTarget.textContent=state.hideNA?"Show detail columns":"Hide detail columns"; e.currentTarget.setAttribute("aria-pressed",String(!state.hideNA)); renderTable();};
 $("#natoggle").textContent="Hide detail columns"; $("#natoggle").setAttribute("aria-pressed","true");
 
@@ -394,8 +384,7 @@ for(const sel of ["#wkb","#yrb"]){
 }
 
 renderFresh(); renderControls(); renderTable(); renderWeeks(); renderYears(); renderChecks();
-if(window.matchMedia("(min-width:981px)").matches){ $("#filters").hidden=false; renderFilters(); $("#ftoggle").setAttribute("aria-expanded","true"); }
-window.matchMedia("(min-width:981px)").addEventListener("change",e=>{ if(e.matches){ $("#filters").hidden=false; renderFilters(); } });
+$("#filters").hidden=false; renderFilters();
 const navLinks=[...document.querySelectorAll(".topnav a")];
 const secs=navLinks.map(a=>document.querySelector(a.getAttribute("href")));
 function markNav(){ let cur=0; secs.forEach((s,i)=>{ if(s && s.getBoundingClientRect().top<140) cur=i; }); navLinks.forEach((a,i)=>a.classList.toggle("on",i===cur)); }

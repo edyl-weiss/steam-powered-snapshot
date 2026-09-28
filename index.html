@@ -5,15 +5,15 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="description" content="Steam top sellers and most-played games in one sortable table, with weekly chart history and Steam's year-end top 12 back to 2020. A dated snapshot, not live data.">
 <meta name="theme-color" content="#171a21">
-<meta property="og:title" content="Steam Performance Snapshot">
+<meta property="og:title" content="Steam Powered Snapshot">
 <meta property="og:description" content="Steam top sellers, player counts, and chart history back to 2020, cross-checked across sources.">
 <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/assets/styles.css">
-<title>Steam Performance Snapshot, with history to 2020</title>
+<title>Steam Powered Snapshot</title>
 </head>
 <body>
 <div class="topbar"><div class="in">
-  <span class="brand"><i aria-hidden="true"></i>Chart Deck</span>
+  <span class="brand"><i aria-hidden="true"></i>Steam Powered Snapshot</span>
   <nav class="topnav" aria-label="Sections"><a href="#charts" class="on">Charts</a><a href="#weeks">Weekly</a><a href="#years">History</a><a href="#checks">Sources</a></nav>
 </div></div>
 <div class="wrap" id="charts">
@@ -39,8 +39,7 @@
     <div class="scrollx"><div class="seg" id="modes" role="group" aria-label="Ranking mode"></div></div>
   </div>
   <div class="row">
-    <button class="btn green" id="ftoggle" aria-expanded="false" aria-controls="filters">Narrow results</button>
-    <button class="btn" id="natoggle" aria-pressed="true">Hide detail columns</button>
+        <button class="btn" id="natoggle" aria-pressed="true">Hide detail columns</button>
     <span class="count" id="count"></span>
   </div>
 </div>
@@ -77,8 +76,8 @@
   <div><h2>Where these numbers come from</h2>
     <p>Top-seller rank, price, discount, rank change and weeks on chart come from Steam’s live Top Sellers chart for the United States, which Steam ranks by revenue. It was read once, on Sep 28, 2026 at about 01:05 UTC.</p>
     <p>Current players and today’s peak come from Steam’s official most-played chart (ISteamChartsService), as mirrored by Steam Dashboard at 03:15 UTC on Sep 27, 2026. That’s about 22 hours older than the sales chart.</p></div>
-  <div><h2>Estimates, and what’s still missing</h2>
-    <p>Reviews, Metacritic scores, developers, release dates, all-time peaks, and sales and revenue estimates were gathered for 19 leading games from analytics firms, publisher announcements and press coverage. Every estimate shows its source, date and the range across sources. The other games show Data unavailable rather than guesses.</p>
+  <div><h2>Details, and what’s still missing</h2>
+    <p>Review scores and counts, developers, release dates, genre tags and all-time peaks come from third-party trackers, publisher announcements and press coverage. Each figure shows its source and date. Games without a checked figure show Data unavailable rather than guesses.</p>
     <p>The 7-day and 30-day views compare today’s live chart with Steam’s weekly charts. There’s no 24-hour or 90-day chart to compare against, and the year-end lists aren’t ranked, so those views stay empty. Game artwork isn’t shown because the page can’t load remote images.</p></div>
   <div><h2>Titles matched by App ID</h2>
     <p>Some games on the players chart were listed only by App ID. Where the ID belongs to a long-established game, the title was matched by reference and is underlined with dots. Six IDs couldn’t be matched and stay as App numbers.</p></div>
